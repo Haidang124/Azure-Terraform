@@ -14,6 +14,10 @@ using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using System.ComponentModel;
 using System.Xml.Linq;
+using Microsoft.Azure.Cosmos;
+using Microsoft.Identity.Client.Platforms.Features.DesktopOs.Kerberos;
+using System.Reflection.Metadata;
+using Azure;
 
 namespace NikonAzfunc
 {
@@ -30,30 +34,17 @@ namespace NikonAzfunc
         public async Task<HttpResponseData> TestAll([HttpTrigger(AuthorizationLevel.Function, "get", "post")] HttpRequestData req)
         {
             var response = req.CreateResponse(HttpStatusCode.OK);
-            response.WriteString("<br> <b> Test Azure KeyVault: </b> </br>");
+            // Test Keyvault
+            response = await TestAKVFunc(req, response);
 
-            var keyVaultName = Environment.GetEnvironmentVariable("keyVaultName", EnvironmentVariableTarget.Process);
-            var clientId = Environment.GetEnvironmentVariable("clientId", EnvironmentVariableTarget.Process);
-            var clientSecret = Environment.GetEnvironmentVariable("clientSecret", EnvironmentVariableTarget.Process);
-            var tenantId = Environment.GetEnvironmentVariable("tenantId", EnvironmentVariableTarget.Process);
+            // Test File Share
+            response = TestStorageFSFunc(req,response);
 
-            // MSI
-            //var credential = new ManagedIdentityCredential(clientId);
-            var credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
+            // Test Blob Storage 
+            response = await TestStorageBlobFunc(req, response);
 
-            var client = new SecretClient(new Uri($"https://{keyVaultName}.vault.azure.net/"), credential);
-
-            await foreach (var secretProperties in client.GetPropertiesOfSecretsAsync())
-            {
-                string secretName = secretProperties.Name;
-                KeyVaultSecret secret = await client.GetSecretAsync(secretName);
-                string secretValue = secret.Value;
-
-                response.WriteString($"<br>");
-                response.WriteString($"Secret Name: {secretName} - ");
-                response.WriteString($"Secret Value: {secretValue}");
-                response.WriteString($"</br>");
-            }
+            // Test Cosmos DB
+            response = await TestCosmosFunc(req, response);
 
             return response;
 
@@ -63,6 +54,11 @@ namespace NikonAzfunc
         public async Task<HttpResponseData> TestAKV([HttpTrigger(AuthorizationLevel.Function, "get", "post")] HttpRequestData req)
         {
             var response = req.CreateResponse(HttpStatusCode.OK);
+            response = await TestAKVFunc(req,response);
+            return response;
+        }
+        public async Task<HttpResponseData> TestAKVFunc([HttpTrigger(AuthorizationLevel.Function, "get", "post")] HttpRequestData req, HttpResponseData response)
+        {
             response.WriteString("<br> <b> Test Azure KeyVault: </b> </br>");
 
             var keyVaultName = Environment.GetEnvironmentVariable("keyVaultName", EnvironmentVariableTarget.Process);
@@ -93,9 +89,15 @@ namespace NikonAzfunc
         }
 
         [Function("storage-fileshare")]
-        public HttpResponseData TestStorageFS([HttpTrigger(AuthorizationLevel.Function, "get", "post")] HttpRequestData req, ExecutionContext context)
+        public HttpResponseData TestStorageFS([HttpTrigger(AuthorizationLevel.Function, "get", "post")] HttpRequestData req)
         {
             var response = req.CreateResponse(HttpStatusCode.OK);
+            response = TestStorageFSFunc(req, response);
+            return response;
+        }
+
+        public HttpResponseData TestStorageFSFunc([HttpTrigger(AuthorizationLevel.Function, "get", "post")] HttpRequestData req, HttpResponseData response)
+        {
             response.WriteString("<br> <b> Test File Share: </b> </br>");
 
             var uri = Environment.GetEnvironmentVariable("uri", EnvironmentVariableTarget.Process);
@@ -129,11 +131,17 @@ namespace NikonAzfunc
 
             return response;
         }
-
+        
         [Function("storage-blob")]
-        public async Task<HttpResponseData> TestStorageBlob([HttpTrigger(AuthorizationLevel.Function, "get", "post")] HttpRequestData req, ExecutionContext context)
+        public async Task<HttpResponseData> TestStorageBlob([HttpTrigger(AuthorizationLevel.Function, "get", "post")] HttpRequestData req)
         {
             var response = req.CreateResponse(HttpStatusCode.OK);
+            response = await TestStorageBlobFunc(req, response);
+            return response;
+        }
+
+        public async Task<HttpResponseData> TestStorageBlobFunc([HttpTrigger(AuthorizationLevel.Function, "get", "post")] HttpRequestData req, HttpResponseData response)
+        {
             response.WriteString("<br> <b> Test Blob Storage: </b> </br>");
 
             var connectionString = Environment.GetEnvironmentVariable("connectionStringFs", EnvironmentVariableTarget.Process);
@@ -169,34 +177,34 @@ namespace NikonAzfunc
         }
 
         [Function("cosmos")]
-        public async Task<HttpResponseData> TestCosmos([HttpTrigger(AuthorizationLevel.Function, "get", "post")] HttpRequestData req, ExecutionContext context)
+        public async Task<HttpResponseData> TestCosmos([HttpTrigger(AuthorizationLevel.Function, "get", "post")] HttpRequestData req)
         {
             var response = req.CreateResponse(HttpStatusCode.OK);
-            response.WriteString("<br> <b> Test Azure KeyVault: </b> </br>");
+            response = await TestCosmosFunc(req, response);
+            return response;
+        }
 
-            var keyVaultName = Environment.GetEnvironmentVariable("keyVaultName", EnvironmentVariableTarget.Process);
-            var clientId = Environment.GetEnvironmentVariable("clientId", EnvironmentVariableTarget.Process);
-            var clientSecret = Environment.GetEnvironmentVariable("clientSecret", EnvironmentVariableTarget.Process);
-            var tenantId = Environment.GetEnvironmentVariable("tenantId", EnvironmentVariableTarget.Process);
+        public async Task<HttpResponseData> TestCosmosFunc([HttpTrigger(AuthorizationLevel.Function, "get", "post")] HttpRequestData req, HttpResponseData response)
+        {
+            //string connectionString = "AccountEndpoint=https://scarpe.documents.azure.com:443/;AccountKey=aztymVdg89A5JhnYkLWGj58d7ZxaPTxm5YYKeTgY1rTmsi90cJOHyHcQtF2soGB70VbsRH6sc6RyACDbX55Q1g==;";
+            response.WriteString("<br> <b> Test Cosmos connection: </b> </br>");
 
-            // MSI
-            //var credential = new ManagedIdentityCredential(clientId);
-            var credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
+            //CosmosClient cosmosClient = new CosmosClient(connectionString);
+            var EndpointUri = Environment.GetEnvironmentVariable("EndpointUri", EnvironmentVariableTarget.Process);
+            var PrimaryKey = Environment.GetEnvironmentVariable("PrimaryKey", EnvironmentVariableTarget.Process);
+            CosmosClient cosmosClient = new CosmosClient(EndpointUri, PrimaryKey);
 
-            var client = new SecretClient(new Uri($"https://{keyVaultName}.vault.azure.net/"), credential);
-
-            await foreach (var secretProperties in client.GetPropertiesOfSecretsAsync())
+            FeedIterator<DatabaseProperties> databasesIterator = cosmosClient.GetDatabaseQueryIterator<DatabaseProperties>();
+            while (databasesIterator.HasMoreResults)
             {
-                string secretName = secretProperties.Name;
-                KeyVaultSecret secret = await client.GetSecretAsync(secretName);
-                string secretValue = secret.Value;
-
-                response.WriteString($"<br>");
-                response.WriteString($"Secret Name: {secretName} - ");
-                response.WriteString($"Secret Value: {secretValue}");
-                response.WriteString($"</br>");
+                FeedResponse<DatabaseProperties> currentResultSet = await databasesIterator.ReadNextAsync();
+                foreach (DatabaseProperties databaseProperties in currentResultSet)
+                {
+                    response.WriteString($"<br>");
+                    response.WriteString($"Database Name: {databaseProperties.Id}");
+                    response.WriteString($"</br>");
+                }
             }
-
             return response;
         }
     }
