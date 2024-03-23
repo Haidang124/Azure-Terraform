@@ -18,6 +18,8 @@ using Microsoft.Azure.Cosmos;
 using Microsoft.Identity.Client.Platforms.Features.DesktopOs.Kerberos;
 using System.Reflection.Metadata;
 using Azure;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Http;
 
 namespace NikonAzfunc
 {
@@ -30,23 +32,39 @@ namespace NikonAzfunc
             _logger = loggerFactory.CreateLogger<Function1>();
         }
 
+        [Function("Function1")]
+        public IActionResult Run([HttpTrigger(AuthorizationLevel.Function, "get", "post")] HttpRequest req)
+        {
+            _logger.LogInformation("C# HTTP trigger function processed a request.");
+            return new OkObjectResult("Welcome to Azure Functions!");
+        }
+
         [Function("test")]
         public async Task<HttpResponseData> TestAll([HttpTrigger(AuthorizationLevel.Function, "get", "post")] HttpRequestData req)
         {
+
             var response = req.CreateResponse(HttpStatusCode.OK);
-            // Test Keyvault
-            response = await TestAKVFunc(req, response);
+            try
+            {
+                // Test Keyvault
+                response = await TestAKVFunc(req, response);
 
-            // Test File Share
-            response = TestStorageFSFunc(req,response);
+                // Test File Share
+                response = TestStorageFSFunc(req,response);
 
-            // Test Blob Storage 
-            response = await TestStorageBlobFunc(req, response);
+                // Test Blob Storage 
+                response = await TestStorageBlobFunc(req, response);
 
-            // Test Cosmos DB
-            response = await TestCosmosFunc(req, response);
+                // Test Cosmos DB
+                response = await TestCosmosFunc(req, response);
 
-            return response;
+                return response;
+            }
+            catch (Exception ex)
+            {
+                response.WriteString(ex.ToString());
+                return response;
+            }
 
         }
 
@@ -66,8 +84,8 @@ namespace NikonAzfunc
             var clientSecret = Environment.GetEnvironmentVariable("clientSecret", EnvironmentVariableTarget.Process);
             var tenantId = Environment.GetEnvironmentVariable("tenantId", EnvironmentVariableTarget.Process);
 
-            // MSI
-            //var credential = new ManagedIdentityCredential(clientId);
+            //// MSI
+            ////var credential = new ManagedIdentityCredential(clientId);
             var credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
 
             var client = new SecretClient(new Uri($"https://{keyVaultName}.vault.azure.net/"), credential);
@@ -192,19 +210,24 @@ namespace NikonAzfunc
             //CosmosClient cosmosClient = new CosmosClient(connectionString);
             var EndpointUri = Environment.GetEnvironmentVariable("EndpointUri", EnvironmentVariableTarget.Process);
             var PrimaryKey = Environment.GetEnvironmentVariable("PrimaryKey", EnvironmentVariableTarget.Process);
+
             CosmosClient cosmosClient = new CosmosClient(EndpointUri, PrimaryKey);
 
             FeedIterator<DatabaseProperties> databasesIterator = cosmosClient.GetDatabaseQueryIterator<DatabaseProperties>();
-            while (databasesIterator.HasMoreResults)
+            if (databasesIterator != null)
             {
-                FeedResponse<DatabaseProperties> currentResultSet = await databasesIterator.ReadNextAsync();
-                foreach (DatabaseProperties databaseProperties in currentResultSet)
+                while (databasesIterator.HasMoreResults)
                 {
-                    response.WriteString($"<br>");
-                    response.WriteString($"Database Name: {databaseProperties.Id}");
-                    response.WriteString($"</br>");
+                    FeedResponse<DatabaseProperties> currentResultSet = await databasesIterator.ReadNextAsync();
+                    foreach (DatabaseProperties databaseProperties in currentResultSet)
+                    {
+                        response.WriteString($"<br>");
+                        response.WriteString($"Database Name: {databaseProperties.Id}");
+                        response.WriteString($"</br>");
+                    }
                 }
-            }
+            }    
+           
             return response;
         }
     }

@@ -7,6 +7,7 @@ using Azure.Storage.Files.Shares;
 using Azure.Storage.Files.Shares.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Cosmos;
+using System.Net;
 
 namespace NikonAPI.Controllers
 {
@@ -27,12 +28,20 @@ namespace NikonAPI.Controllers
         [HttpGet()]
         public async Task<List<string>> Test()
         {
-            List<string> output = new List<string>();
-            output =  await TestAKVFunc(output);
-            output =  TestStorageFSFunc(output);
-            output =  await TestStorageBlobFunc(output);
-            output =  await TestCosmosFunc(output);
-            return output;
+            try
+            {
+                List<string> output = new List<string>();
+                output = await TestAKVFunc(output);
+                output = TestStorageFSFunc(output);
+                output = await TestStorageBlobFunc(output);
+                output = await TestCosmosFunc(output);
+                output = TestRoutingFunc(output);
+                return output;
+            }
+            catch (Exception ex)
+            {
+                throw new Exception(ex.ToString());
+            }
         }
 
         [HttpGet("Keyvault")]
@@ -167,6 +176,38 @@ namespace NikonAPI.Controllers
             }
             output.Add("");
             return output;
+        }
+        [HttpGet("routing")]
+        public List<string> TestRouting() {
+            List<string> output = new List<string>();
+            return TestRoutingFunc(output);
+        }
+        private List<string> TestRoutingFunc(List<string> output)
+        {
+            output.Add("Test Routing");
+            string computerName = Environment.MachineName;
+            output.Add("Computer Name: " + computerName);
+
+            string ipAddress = GetLocalIPAddress();
+            output.Add("IP Address: " + ipAddress);
+            return output;
+        }
+
+        public static string GetLocalIPAddress()
+        {
+            string ipAddress = string.Empty;
+            IPHostEntry hostEntry = Dns.GetHostEntry(Dns.GetHostName());
+
+            foreach (IPAddress address in hostEntry.AddressList)
+            {
+                if (address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                {
+                    ipAddress = address.ToString();
+                    break;
+                }
+            }
+
+            return ipAddress;
         }
     }
 }
